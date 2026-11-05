@@ -1,8 +1,8 @@
 # VPNGate SSTP 家宽节点（edgetunnel 链式代理） 🚀
 
-自动抓取 [VPN Gate](https://www.vpngate.net/) 的 SSTP 家宽/机房节点，调用检测 Worker 逐个验证可用性，按国家分组、标注住宅/机房，生成可直接通过 **URL 自动轮换** 的节点清单。**每 30 分钟自动更新一次。**
+自动抓取 [VPN Gate](https://www.vpngate.net/) 的 SSTP 家宽/机房节点，调用检测 Worker 逐个验证可用性，按国家分组、标注住宅/机房，生成可直接通过 **URL 自动轮换** 的节点清单。**每天自动更新一次（UTC 00:00）。**
 
-> 核心价值：VPN Gate 的 SSTP 节点 30 分钟就换一批，手动测试筛选太痛苦。本仓库把它全自动了——你只需把 `nodes.txt` 的网址填进 edgetunnel 后台一次，之后节点每 30 分钟自动换，零手动。
+> 核心价值：VPN Gate 的 SSTP 节点更替频繁，手动测试筛选太痛苦。本仓库把它全自动了——你只需把 `nodes.txt` 的网址填进 edgetunnel 后台一次，之后节点每天自动更新，零手动。
 
 ---
 
@@ -10,7 +10,7 @@
 
 ~~~text
 VPN Gate 官方源
-      │  (每 30 分钟，GitHub Actions 定时抓取)
+      │  (每天一次，GitHub Actions 定时抓取)
       ▼
 筛选 SSTP 节点 → 去重
       │
@@ -28,7 +28,7 @@ VPN Gate 官方源
 edgetunnel 后台「自定义优选IP」框填 https://…/nodes.txt
       │  edgetunnel 每次生成订阅时自动 fetch → 解析 $sstp:// → 套链式代理
       ▼
-客户端订阅 edgetunnel 订阅 → 使用 SSTP 家宽节点 (每 30 分钟自动换)
+客户端订阅 edgetunnel 订阅 → 使用 SSTP 家宽节点 (每天自动更新)
 ~~~
 
 ---
@@ -72,8 +72,11 @@ edgetunnel 后台「自定义优选IP」框填 https://…/nodes.txt
 
 | 文件 | 位置 | 改成什么 | 为什么 |
 | :--- | :--- | :--- | :--- |
-| .github/workflows/check.yml | env 里的 `CHECK_WORKER` | 你的检测 Worker 域名，形如 `https://xxx.workers.dev/check?sstp=vpn:vpn@` | 检测统一走你自己的 Worker |
+| GitHub → Settings → Secrets and variables → Actions | 新建 Repository secret，名字必须是 `WULEI` | 值填**完整地址** `https://xxx.workers.dev/check?sstp=vpn:vpn@` | workflow 用 `${{ secrets.WULEI }}` 读取，避免明文暴露域名 |
+| .github/workflows/check.yml | env 里的 `CHECK_WORKER` | 保持 `${{ secrets.WULEI }}` 不变 | 与上面的 Secret 名字必须一致 |
 | vpngate.py | `NODES_URL` | 把里面写死的固定地址换成 `你的用户名/仓库名` | 自动更新时用到的固定地址 |
+
+> **注意**：Secret 的值**不能只填域名**，必须带上 `/check?sstp=vpn:vpn@`。程序是把节点 `host:port` 直接拼在这个字符串后面，只填域名会拼出无效 URL、导致整轮检测失败。
 
 > **注意**：`vpngate.py` 中**不需要**配置 `EDT_UUID` 和 `EDT_DOMAIN`。你之前看到的这两个变量是旧版遗留，现已删除。edgetunnel 后台会自己处理 UUID 和域名。
 
@@ -104,7 +107,7 @@ https://你的GitHub用户名.github.io/仓库名/nodes.txt
 3. 点保存
 4. 客户端刷新订阅 → 每次刷新 edgetunnel 都重新拉取一次 nodes.txt，节点自动更新
 
-> 原理：`nodes.txt` 是纯节点行版本（无注释头），每行 `入口域名:443#国家-住宅-01$sstp://vpn:vpn@节点:端口`。edgetunnel 下次生成订阅时会 fetch 这个网址、逐行解析成优选入口 + 链式代理指令。你只填一次，之后节点每 30 分钟自动换、零手动。
+> 原理：`nodes.txt` 是纯节点行版本（无注释头），每行 `入口域名:443#国家-住宅-01$sstp://vpn:vpn@节点:端口`。edgetunnel 下次生成订阅时会 fetch 这个网址、逐行解析成优选入口 + 链式代理指令。你只填一次，之后节点每天自动更新、零手动。
 
 ---
 
@@ -143,18 +146,18 @@ https://你的GitHub用户名.github.io/仓库名/nodes.txt
 ### 全部 -1
 检查：edgetunnel 是否部署好、域名是否解析到 Cloudflare、UUID 是否填对、传输协议是否对得上。
 
-### 30 分钟没更新
-到 Actions 页看最近一次运行是否成功、cron 是否还在。
+### 超过一天没更新
+到 Actions 页看最近一次运行是否成功、cron 是否还在。注意定时任务是 **UTC 00:00**（北京时间早上 8:00），且 GitHub Actions 的 schedule 可能延迟，不必按点等待。
 
 ### 检测 Worker 报错
-确认 Worker 部署成功、域名填对（workflow 里的 `CHECK_WORKER`），浏览器直接访问 `https://你的Worker/check?sstp=...` 看是否返回 JSON。
+确认 Worker 部署成功、Secret `WULEI` 的值填对（完整 URL，含 `/check?sstp=vpn:vpn@`，且前后无空格/换行），浏览器直接访问该地址再加一个 `host:port` 看是否返回 JSON。
 
 ### 不知道 UUID 和节点域名在哪里看
 登录 edgetunnel 后台（`https://你的域名/admin`），在后台首页就能看到。
 
 ---
 
-*流水线：GitHub Actions（每 30 分钟 cron） → vpngate.py → 检测 Worker → GitHub Pages*
+*流水线：GitHub Actions（每天一次 cron，UTC 00:00） → vpngate.py → 检测 Worker → GitHub Pages*
 
 ---
 
@@ -174,7 +177,7 @@ https://你的GitHub用户名.github.io/仓库名/nodes.txt
 
 ## 项目热度
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hezhanleiok/gate&type=Date)](https://star-history.com/#hezhanleiok/gate&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=wumaoyv-code/gate&type=Date)](https://star-history.com/#wumaoyv-code/gate&Date)
 
 ---
 

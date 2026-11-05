@@ -41,7 +41,9 @@ VPNGATE_MIRROR = os.environ.get(
     "VPNGATE_MIRROR",
     "https://raw.githubusercontent.com/fdciabdul/Vpngate-Scraper-API/main/json/data.json",
 )
-WORKER_CHECK_URL = os.environ.get("CHECK_WORKER", "https://你的域名/check?sstp=vpn:vpn@")
+# 检测 Worker 地址：CI 由 workflow 的 secrets.WULEI 注入，本地需自行设置 CHECK_WORKER。
+# 必须是完整 URL 且以 /check?sstp=vpn:vpn@ 结尾（下方为字符串拼接，不是参数拼接）。
+WORKER_CHECK_URL = os.environ.get("CHECK_WORKER", "").strip()
 CONCURRENCY = max(1, int(os.environ.get("CHECK_CONCURRENCY", "32")))
 CHECK_TIMEOUT = float(os.environ.get("CHECK_TIMEOUT", "90"))
 MAX_CHECK_NODES = int(os.environ.get("MAX_CHECK_NODES", "0"))
@@ -174,9 +176,14 @@ def parse_csv(text):
     }
 
     rows = []
+    needed = max(pos.values()) + 1
     for ln in data_lines:
-        fields = next(csv.reader(io.StringIO(ln)))
-        if len(fields) < 7: continue
+        try:
+            fields = next(csv.reader(io.StringIO(ln)))
+        except (csv.Error, StopIteration):
+            continue
+        # 按实际用到的最大列索引判断，短行只跳过本行，避免 IndexError 让整轮 die()
+        if len(fields) < needed: continue
         host = fields[pos["hostname"]].strip()
         ip = fields[pos["ip"]].strip()
         if not host or not ip: continue
@@ -408,7 +415,7 @@ def build_outputs(results, raw_count, sstp_count, source):
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "source": source,
-        "worker": WORKER_CHECK_URL,
+        # 不写入 WORKER_CHECK_URL：public/data.json 会发布到公开 Pages，明文会泄露 Secret
         "stats": stats,
         "countries": by_country,
         "available": available,
@@ -469,6 +476,9 @@ def write_outputs(data, edge_hosts):
 # main
 # ---------------------------------------------------------------------------
 def main():
+    # Secret 缺失/为空/只填了域名时立刻失败，避免拼出无效 URL 后所有节点被误判为不可用
+    if not WORKER_CHECK_URL.startswith(("http://", "https://")):
+        die("CHECK_WORKER 未配置或格式错误：需为完整 URL，例如 https://xxx.workers.dev/check?sstp=vpn:vpn@")
     session = requests.Session()
     rows, source = fetch_vpngate()
     raw_count = len(rows)

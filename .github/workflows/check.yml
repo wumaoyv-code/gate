@@ -33,7 +33,7 @@ jobs:
       - name: Get VPN Gate nodes + check via Cloudflare Worker + build page
         run: python vpngate.py
         env:
-          # 已部署的检测 Worker (不要改动: 检测统一走这里)
+          # 检测统一走 Secret WULEI；其值必须是完整 URL，含 /check?sstp=vpn:vpn@ 后缀
           CHECK_WORKER: ${{ secrets.WULEI }}
           CHECK_CONCURRENCY: "32"
           CHECK_TIMEOUT: "90"
